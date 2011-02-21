@@ -29,11 +29,10 @@ $wgetParms = "--tries=2";
                ['FileFront',   'filefront.com'     ],
                ['Viddler',     'viddler.com'       ],
                ['Vimeo',       'vimeo.com'         ],
-               ['blip.tv',     'blip.tv'           ]);
-
-# Location of CSS file
-$cssURL = "/LetsPlay/myStyle.css";
-
+               ['blip.tv',     'blip.tv'           ],
+               ['Baldurdash',  'bd.baldurk.org'    ],
+               ['Grimfiend',   'grimfiend.com'     ],
+               ['DiscoShiny',  'discoshiny.com'    ]);
 
 # Cookies for downloading threads from the forums:
 # - Auto-detect by default (currently Windows-only)
