@@ -8,9 +8,6 @@ $threadURL = "";
 # This will also be automatically applied when renumbering a thread
 $gameName = "?";
 
-# Your SA name, for the 'Collected By' line
-$collector = "Your SA Name Here";
-
 
 # These following settings should be set to 1 to enable them,
 # or to 0 to disable them
@@ -134,11 +131,11 @@ while(<IN>) {
 # And return to the start of the file
 seek(IN, 0, SEEK_SET);
 
-$upd = 0; $post = 0; $gotUpdate = 0;
+# $upd: -1 is no updates, 0 is the OP
+$upd = -1; $post = 0; $gotUpdate = 0;
 $authorName = "?"; $currAuthor = "?";
 $firstDate = "?"; $lastDate = "?";
 $threadName = "?"; $threadURL = "?";
-$numPics = 0; $totSize = 0; 
 $numVids = 0; $vidSize = 0;
 $errors = ""; $skippedImgFile = ""; $skippedVidFile = "";
 
@@ -160,7 +157,7 @@ if($autoChapters) {
       }
     }
     elsif(/<dt class="author/) { # Store author for this post
-      ($currAuthor) = m#<dt class="author(?: op)?">(.+)</dt>#;
+      ($currAuthor) = m#<dt class="author(?: op)?" title="">(.+)</dt>#;
 
       if($authorName eq "?" && $currAuthor) { # Store thread author (first author found)
         $authorName = $currAuthor;
@@ -170,7 +167,7 @@ if($autoChapters) {
 }
 
 # Catch empty thread download
-if($upd == 0 && $autoChapters) {
+if($upd == -1 && $autoChapters) {
   print "\nNo posts found in thread. Possibly your SA browser cookies were not found (see above), you don't have archives access (if applicable), or there is a temporary server error.\n";
   print "\nThe contents of autoFetchedThread.txt may be useful.\n";
 
@@ -183,7 +180,7 @@ if($upd == 0 && $autoChapters) {
 # Set automatic chapter naming to off
 $useAutoChapters = 0;
 # unless the percentage is met
-if($autoChapters && ($chapTitlesGot / $upd) >= ($autoChapThresh / 100)) {
+if($autoChapters && ($chapTitlesGot / ($upd + 1)) >= ($autoChapThresh / 100)) {
   $useAutoChapters = 1;
 }
 
@@ -191,8 +188,9 @@ if($autoChapters && ($chapTitlesGot / $upd) >= ($autoChapThresh / 100)) {
 seek(IN, 0, SEEK_SET);
 # Reset things
 $chapTitleChecking = 0;
-$upd = 0; $post = 0;
+$upd = -1; $post = 0;
 $currAuthor = "?"; $authorName = "?";
+$OPcontent = "";
 
 # Go through the file until you hit a post, useful thing or the file ends
 while(<IN>) {
@@ -208,7 +206,7 @@ while(<IN>) {
   }
   
   elsif(/<dt class="author/) { # Store author for this post
-    ($currAuthor) = m#<dt class="author(?: op)?">(.+)</dt>#;
+    ($currAuthor) = m#<dt class="author(?: op)?" title="">(.+)</dt>#;
 
     if($authorName eq "?" && $currAuthor) { # Store thread author (first author found)
       $authorName = $currAuthor;
@@ -227,9 +225,11 @@ while(<IN>) {
     if($firstDate eq "?") { $firstDate = $lastDate; }
 
     # Tack the date onto the update file in case of renumbering
-    open(OUT, ">>Update $updDir/index.html");
-    print OUT "<!-- date $lastDate -->\n";
-    close(OUT);
+    if($upd > 0) {
+      open(OUT, ">>$postDir/index.html");
+      print OUT "<!-- date $lastDate -->\n";
+      close(OUT);
+    }
 
     $gotUpdate = 0;
   }
@@ -250,23 +250,23 @@ if($threadURL) { unlink 'autoFetchedThread.txt'; }
 # Need to delete the 'next' links from the final update
 
 # Read in the existing file
-open(IN, "<Update $updDir/index.html");
+open(IN, "<$postDir/index.html");
 @lines = <IN>;
 close(IN);
 
 # And write it straight back out, minus the offending lines
 $checking = 0;
-open(OUT, ">Update $updDir/index.html");
+open(OUT, ">$postDir/index.html");
 for $l (@lines) {
   if($checking) {
-    next if $l =~ /Next Chapter/;
+    next if $l =~ />Next</;
   }
 
   print OUT $l;
 
-  if($l =~ /<!-- begin (header|footer) -->/) {
+  if($l =~ /<!-- NOTE: Don't change the layout of these/) {
     $checking = 1;
-  } elsif($l =~ /<!-- end (header|footer) -->/) {
+  } elsif($l =~ /<!-- Chapter Titles are specified in the TOC/) {
     $checking = 0;
   }
 }
@@ -302,88 +302,80 @@ if(%smilies) {
 
 # Retry fetching any images that failed previously
 for $fImg (@failedImgs) {
-  ($failFile, $failURL, $failText) = @$fImg; 
+  ($failDir, $failFile, $failURL, $failText) = @$fImg; 
 
   print "Retrying: $failText ($failURL)...";
   if($downloadFiles) {
-    system(qq#wget $wgetParms -nv -o wgeterr.txt -O "$failFile" "$failURL"#);
+    system(qq#wget $wgetParms -nv -o wgeterr.txt -O "$failDir/$failFile" "$failURL"#);
   } else {
     $? = 0; # fake success
   }
 
   if($? != 0) {
     print "failed\n";
-    $errors .= "* failed download of $failFile ($failURL), even after retrying\n";
+    $errors .= "* failed download of $failDir/$failFile ($failURL), even after retrying\n";
+    # mark up missing image
+
+    # read file (need all in one line to do multi-line matches)
+    open(INDEX, "<$failDir/index.html");
+    $indexFile = do { local $/; <INDEX> };
+    close(INDEX);
+
+    # replace
+    $indexFile =~ s#<img src="$failFile" alt="" class="img" border="0">#<missing>$failFile</missing>#g;
+    $indexFile =~ s#<a href="$failFile(.*?)</a>#<missing>$failFile</missing>#gsm;
+
+    # write file
+    open(INDEX, ">$failDir/index.html");
+    print INDEX $indexFile;
+    close(INDEX);
+
     open(ERR, "<wgeterr.txt");
     while(<ERR>) { $errors .= $_; }
     close(ERR);
   } else {
     print "ok\n";
-    $errors .= "* succeeded in retrying download of $failFile ($failURL)\n";
+    $errors .= "* succeeded in retrying download of $failDir/$failFile ($failURL)\n";
   }
-
-  # update statistics (regardless of failure)
-  $numPics++;
-  $totSize += (-s "$failFile");
 }
 # Remove wget error file (if it was generated, either here or earlier)
 unlink 'wgeterr.txt';
-
-# Get the current date to use as the Date Added
-use POSIX;
-$addedDate = POSIX::strftime("%b %d, %Y", localtime(time));
 
 # Create the index
 open(IDX, ">index.html") || die "Couldn't create index: $!\n";
 
 print IDX <<HEADER1;
 <html>
-
 <head>
-<link rel="StyleSheet" href="$cssURL" type="text/css">
-<TITLE>$gameName - Index</TITLE>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta http-equiv="content-language" content="en" />
 </head>
-
 <body>
-<h1>Let's Play $gameName</h1>
-Author: $authorName<br>
-Collected By: $collector<br>
-Original Thread: <A HREF="$threadURL">$threadName</A><br>
-First Update: $firstDate<br>
-Last Update: $lastDate<br>
-Date Added: $addedDate<br>
+<!-- NOTE: Don't change the layout of these, it will be parsed by a script. -->
+<h1>Title: $gameName</h1>
+<h1>Author: $authorName</h1>
+<h1>Thread: $threadName</h1>
+<h1>Begin Date: $firstDate</h1>
+<h1>End Date: $lastDate</h1>
+<h1>Num Updates: $upd</h1> <!-- This is the number of videos for a video LP-->
+<h1>Author Webpage: ---</h1>
 
-<br><br><br>
-<h1>Statistics</h1>
-Number of Pictures: $numPics<br>
+<!-- !!DO NOT REMOVE!! BEGIN_CONTENT !!DO NOT REMOVE!! -->
+<h1>Introduction</h1>
+$OPcontent<br />
+<h1>Table of Contents</h1>
+<ul class="toc">
+<!-- BEGIN_TOC -->
 HEADER1
 
-if(! $upd) {
-  print IDX "No updates found!\n";
-  $errors .= "No posts were found\n";
-} else {
-  printf IDX "Total Size: %2.2f MB<br>\n", ($totSize / 1048576);
-  print IDX "Number of Updates: $upd<br>\n";
-  printf IDX "Pictures per Update: %2.2f<br>\n", ($numPics / $upd);
-  printf IDX "Size per Update: %2.2f MB<br>\n", ($totSize / $upd / 1048576);
-}
-
-print IDX <<HEADER2;
-
-<br><br><br>
-<h1>Table of Contents</h1>
-<!-- begin TOC -->
-HEADER2
-
 for($i=1; $i<=$upd; $i++) {
-  print IDX qq#<li><A HREF="Update%20# . sprintf("%02d", $i) . qq#/index.html">$chapTitles[$i]</A><br>\n#;
+  print IDX qq#<li><a href="Update%20# . sprintf("%02d", $i) . qq#/">$chapTitles[$i]</a></li>\n#;
 }
 
 print IDX <<FOOTER;
-<!-- end TOC -->
-
-<br><br><br>
-<A HREF="/LetsPlay/">Back to Let's Play Index</A>
+<!-- END_TOC -->
+</ul>
+<!-- !!DO NOT REMOVE!! END_CONTENT !!DO NOT REMOVE!! -->
 </body>
 </html>
 FOOTER
@@ -633,7 +625,7 @@ sub getPost {
   } else { 
     # Accept the OP as a valid post regardless of any restrictions
     # (unless we're chapter-checking)
-    if($upd == 0) { $keepPost = 1; }
+    if($upd == -1) { $keepPost = 1; }
   }
 
   if(! $keepPost) {
@@ -645,59 +637,60 @@ sub getPost {
   } else {
     # This post was valid, so accept post date immediately below it
     $gotUpdate = 1;
-    $upd++; $updDir = sprintf("%02d", $upd);
+    $upd++;
 
     # Fix definitely typo filter
     $postBody =~ s/\[NOTE: I AM TOO STUPID TO SPELL THE WORD "DEFINITELY" CORRECTLY\]/definitely/g;
-    # Switch <br /> for <br>
-    $postBody =~ s#<br />#<br>#g;
 
-    # Create a title if one wasn't found in the post
-    if(! $chapTitle) { $chapTitle = "Chapter $upd"; }
-    # store it
-    $chapTitles[$upd] = $chapTitle;
-
-    # Create a directory to put it all in
-    mkdir "Update $updDir" || die $!; 
-
-    # Generate the HTML file
-    open(OUT, ">Update $updDir/index.html") || die $!;
-
-    print OUT <<HEADER;
+    # OP -> $OPcontent, otherwise write an index.html
+    if($upd == 0) {
+      $OPcontent = $postBody;
+      $OPcontent =~ s#img src="\.\./Smilies#img src="Smilies#g;
+      $postDir = ".";
+    } else {
+      # Create a title if one wasn't found in the post
+      if(! $chapTitle) { $chapTitle = "Chapter $upd"; }
+      # store it
+      $chapTitles[$upd] = $chapTitle;
+ 
+      # Create a directory to put it all in
+      $postDir = sprintf("Update %02d", $upd);
+      mkdir $postDir || die $!; 
+  
+      # Generate the HTML file
+      open(OUT, ">$postDir/index.html") || die $!;
+  
+      print OUT <<HEADER;
 <html>
 
 <head>
-<link rel="StyleSheet" href="$cssURL" type="text/css">
-<TITLE>$gameName - $chapTitle</TITLE>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta http-equiv="content-language" content="en" />
 </head>
 
 <body>
-<br><br><br>
+<!-- NOTE: Don't change the layout of these, it will be parsed by a script. -->
 HEADER
 
-    # Next/previous links container
-    print OUT "<!-- begin header -->\n";
-    &addHdrFtr;
-    print OUT "<!-- end header -->\n\n";
-    print OUT "<br><br><br>\n";
-
-    # Main content
-    print OUT $postBody;
-
-    # and footer
-    print OUT "<br><br><br>\n\n";
-    print OUT "<!-- begin footer -->\n";
-    &addHdrFtr;
-    print OUT "<!-- end footer -->\n";
-    print OUT "</body>\n";
-    print OUT "</html>\n";
-    close(OUT);
+      # Next/previous links
+      &addHdr;
+      print OUT "\n<!-- Chapter Titles are specified in the TOC in the index -->\n\n";
+  
+      # Main content
+      print OUT "<!-- !!DO NOT REMOVE!! BEGIN_CONTENT !!DO NOT REMOVE!! -->\n";
+      print OUT $postBody;
+      print OUT "<!-- !!DO NOT REMOVE!! END_CONTENT !!DO NOT REMOVE!! -->\n";
+  
+      print OUT "</body>\n";
+      print OUT "</html>\n";
+      close(OUT);
+    }
 
     # Download images
     $iNum = 0; $iCount = keys %images;
     foreach $imgURL (sort { $images{$a} <=> $images{$b} } keys %images) {
       $iNum++;
-      $imgFile = "Update $updDir/$images{$imgURL}";
+      $imgFile = "$postDir/$images{$imgURL}";
 
       # Skip already-downloaded files
       if(-s $imgFile) {
@@ -705,16 +698,8 @@ HEADER
         $skippedImgFile = $imgFile;
         $skippedImgURL = $imgURL;
 
-        # still need to update stats
-        $numPics++;
-        $totSize += (-s "$imgFile");
-
         next; # continue with for loop
       } elsif($skippedImgFile) {
-        # undo the stat change for this first
-        $numPics--; # I could avoid this one, but it's staying for clarity
-        $totSize -= (-s "$skippedImgFile");
-
         # fix for paintedover
         if($imgURL =~ /paintedover/) {
           $wgetExtra = qq#--referer="http://forums.somethingawful.com/" #;
@@ -733,13 +718,10 @@ HEADER
         if($? != 0) {
           print "failed\n";
           # Store for retrying later
-          push(@failedImgs, [$skippedImgFile, $skippedImgURL, "regetting last existing image"]);
+          $skippedImgFile =~ m#(.*)/(.*)#;
+          push(@failedImgs, [$1, $2, $skippedImgURL, "regetting last existing image"]);
         } else {
           print "ok\n";
-
-          # update statistics
-          $numPics++;
-          $totSize += (-s "$skippedImgFile");
         }
 
         $skippedImgFile = "";
@@ -768,13 +750,10 @@ HEADER
 
       if($? != 0) {
         print "failed\n";
-        push(@failedImgs, [$imgFile, $imgURL, "image $iNum in update $upd"]);
+        $imgFile =~ m#(.*)/(.*)#;
+        push(@failedImgs, [$1, $2, $imgURL, "image $iNum in update $upd"]);
       } else {
         print "ok\n";
-
-        # update statistics
-        $numPics++;
-        $totSize += (-s "$imgFile");
       }
     }
 
@@ -836,15 +815,13 @@ HEADER
 }
 
 
-# Add header/footer text to chapter pages (next chapter, previous chapter,
-# return to index)
+# Add header text to chapter pages (next chapter, previous chapter)
 
-sub addHdrFtr {
+sub addHdr {
   if($upd > 1) {
-    print OUT qq#<A HREF="../Update%20# . (sprintf("%02d",$upd-1)) . qq#/index.html"><< Previous Chapter</A><br>\n#;
+    print OUT qq#<a href="../Update%20# . (sprintf("%02d",$upd-1)) . qq#/index.html">Previous</a><br>\n#;
   }
-  print OUT qq#<A HREF="../Update%20# . (sprintf("%02d",$upd+1)) . qq#/index.html">>> Next Chapter</A><br>\n#;
-  print OUT qq#<A HREF="../index.html">^^ Index</A><br>\n#;
+  print OUT qq#<a href="../Update%20# . (sprintf("%02d",$upd+1)) . qq#/index.html">Next</a><br>\n#;
 }
 
 
@@ -953,16 +930,40 @@ sub getThread {
   }
 
   open(FIRST, qq#wget $wgetParms -nv -O - $cookies "$threadURL" |#);
-  open(OUT, ">autoFetchedThread.txt") || die "Couldn't write temporary thread file: $!";
 
-  $pages = 1;
+  $pages = 1; $authorID = 0; $firstPage = "";
   while(<FIRST>) {
     if(/<div class="pages top"/) {
       ($pages) = />Pages \((\d+)\): /;
+    } elsif(! $authorID && $authorPosts && m#&amp;userid=\d+">\?</a>$#) {
+      ($authorID) = /userid=(\d+)/;
+      if($pages > 1) { # if there's more than one page, need to restart
+        while(<FIRST>) { }; # finish reading content to avoid Broken Pipe error
+        last;
+      }
     }
-    print OUT ;
+    $firstPage .= $_;
   }
   close(FIRST);
+
+  # If got the author ID and there's more than one page, need to reget first page to get correct number of pages
+  if($authorID && $pages > 1) {
+    print "* Fetching thread from $threadURL with author ID $authorID...\n";
+    $threadURL .= "&userid=$authorID";
+    open(FIRST, qq#wget $wgetParms -nv -O - $cookies "$threadURL" |#);
+
+    $pages = 1; $firstPage = "";
+    while(<FIRST>) {
+      if(/<div class="pages top"/) {
+        ($pages) = />Pages \((\d+)\): /;
+      }
+      $firstPage .= $_;
+    }
+    close(FIRST);
+  }
+
+  open(OUT, ">autoFetchedThread.txt") || die "Couldn't write temporary thread file: $!";
+  print OUT $firstPage;
 
   if($pages > 1) {
     print "\n* $pages pages to fetch\n";
@@ -1164,8 +1165,19 @@ sub renumThread {
 
   # Keep stats for the new index page
   $firstDate = "?"; $lastDate = "?";
-  $numPics = 0; $totSize = 0;
   $idxTOC = "";
+
+  # Import existing chapter titles from index
+  open(IDX, "<index.html") || die "Couldn't open existing index: $!\n";
+  while(<IDX>) {
+    last if /<!-- BEGIN_TOC -->/;
+  }
+  while(<IDX>) {
+    last if /<!-- END_TOC -->/;
+    ($updNum, $chapTitle) = m#href="Update%20(\d+)/">([^<]+)<#;
+    $chapTitles[$updNum] = $chapTitle;
+  }
+  close(IDX);
 
   # Import existing stats
   $oldErrors = "";
@@ -1190,7 +1202,7 @@ sub renumThread {
   }
 
   # Prepare to regenerate stats file
-  open(V, ">stats.txt");
+  $statsFileText = "";
   $numVids = 0; $vidSize = 0;
   $rmvVid = "";
 
@@ -1234,17 +1246,6 @@ sub renumThread {
 
       # Pick up other stats info
 
-      # Files in directory minus 1 = number of images
-      @pics = glob(sprintf("Update\\ %02d/*", $upd));
-
-      @pics = grep(!/video\d+$/, @pics);
-      $numPics += @pics - 1;
-
-      for (@pics) {
-        next if /index.html/;
-        $totSize += (-s $_);
-      }
-
       # Needs modifying? Only if either:
       # 1. 'subtract' is set so update number needs moving back
       # 2. this is the last update, and the previous last update has been
@@ -1262,64 +1263,43 @@ sub renumThread {
         for (@lines) {
           if($checking) {
             # Fix 'previous chapter' links (remove if this is update 1)
-            if(/Previous Chapter/) {
+            if(/>Previous</) {
               if($newUpd == 1) {
                 $_ = "";
               } else {
-                $_ = qq#<A HREF="../Update%20# . (sprintf("%02d", $newUpd-1)) . qq#/index.html"><< Previous Chapter</A><br>\n#;
+                $_ = qq#<a href="../Update%20# . (sprintf("%02d", $newUpd-1)) . qq#/index.html">Previous</a><br>\n#;
               }
             # Fix 'next chapter' links (remove if this is the last update)
-            } elsif(/Next Chapter/) {
+            } elsif(/>Next</) {
               if($upd == $lastUpdate) {
                 $_ = "";
               } else {
-                $_ = qq#<A HREF="../Update%20# . (sprintf("%02d", $newUpd+1)) . qq#/index.html">>> Next Chapter</A><br>\n#;
+                $_ = qq#<a href="../Update%20# . (sprintf("%02d", $newUpd+1)) . qq#/index.html">Next</a><br>\n#;
               }
             } 
-          }
-
-          # Fix the update number in the page title, change name if applicable
-          if(/^<TITLE>/) {
-            s#>.+? (- .+<)#>$gameName $1#;
-
-            # Fix chapter title if it wasn't retrieved from the post
-            s/ - Chapter \d+</ - Chapter $newUpd</;
-
-            ($chapTitle) = />.+? - (.+)</;
           }
 
           print OUT ;
 
           # Start/stop checking for prev/next links
-          if(/<!-- begin (header|footer) -->/) {
+          if(/<!-- NOTE: Don't change the layout of these/) {
             $checking = 1;
-          } elsif(/<!-- end (header|footer) -->/) {
+          } elsif(/<!-- Chapter Titles are specified in the TOC/) {
             $checking = 0;
           }
         }
         close(OUT);
       } else {
-        # Just modify the game name
-        $newUpd = $upd;
-
-        open(OUT, ">Update " . sprintf("%02d", $newUpd) . "/index.html");
-        for (@lines) {
-          # Fix the update number in the page title, change name if applicable
-          if(/^<TITLE>/) {
-            s#>.+? (- .+<)#>$gameName $1#;
-            ($chapTitle) = />.+? - (.+)</;
-          }
-          print OUT ;
-        }
-        close(OUT);
+        $newUpd = $upd; # for the line just below this one
       }
 
-      $idxTOC .= qq#<li><A HREF="Update%20# . sprintf("%02d", $newUpd) . qq#/index.html">$chapTitle</A><br>\n#;
+      $idxTOC .= qq#<li><a href="Update%20# . sprintf("%02d", $newUpd) . qq#/">$chapTitles[$upd]</a></li>\n#;
+
       if($oldVidStats[$upd]) {
         if($subtract) {
           $oldVidStats[$upd] =~ s/Update $upd:/Update $newUpd:/;
         }
-        print V $oldVidStats[$upd];
+        $statsFileText .= $oldVidStats[$upd];
 
         # Add to video total
         if($oldVidStats[$upd] =~ /videos/) {
@@ -1358,44 +1338,36 @@ sub renumThread {
     }
   }
 
-  # Finish off stats
-  print V "- Total videos: $numVids\n";
-  printf V "- Total video size: %2.2f MB\n", ($vidSize / 1048576);
-  if($rmvVid) { print V "\n$rmvVid"; }
+  # Write out stats (if applicable)
+  if($numVids || $oldErrors) {
+    open(V, ">stats.txt");
+    print V $statsFileText;
+    print V "- Total videos: $numVids\n";
+    printf V "- Total video size: %2.2f MB\n", ($vidSize / 1048576);
+    if($rmvVid) { print V "\n$rmvVid"; }
 
-  if($oldErrors) {
-     print V "\nErrors (from pre-renum original fetch):\n";
-     print V $oldErrors;
+    if($oldErrors) {
+       print V "\nErrors (from pre-renum original fetch):\n";
+       print V $oldErrors;
+    }
+    close(V);
   }
-  close(V);
-
 
   # Read in existing index page (and modify stats)
-  $idxHeader = ""; $idxFooter = ""; $doneH1 = 0;
+  $idxHeader = ""; $idxFooter = "";
   open(IDX, "<index.html") || die "Couldn't open existing index: $!\n";
 
   while(<IDX>) {
-    if(/<TITLE>/) {
-      s#>.+ (- Index<)#>$gameName $1#;
-    } elsif(/<h1>/ && ! $doneH1) {
-      s#>.+<#>Let's Play $gameName<#;
-      $doneH1 = 1;
-    }
-
-    if(/First Update/) { $_ = "First Update: $firstDate<br>\n"; }
-    elsif(/Last Update/) { $_ = "Last Update: $lastDate<br>\n"; }
-    elsif(/Number of Pictures/) { $_ = "Number of Pictures: $numPics<br>\n"; }
-    elsif(/Total Size/) { $_ = sprintf("Total Size: %2.2f MB<br>\n", ($totSize / 1048576)); }
-    elsif(/Number of Updates/) { $_ = "Number of Updates: $newUpd<br>\n"; }
-    elsif(/Pictures per Update/) { $_ = sprintf("Pictures per Update: %2.2f<br>\n", ($numPics / $newUpd)); }
-    elsif(/Size per Update/) { $_ = sprintf("Size per Update: %2.2f MB<br>\n", ($totSize / $newUpd / 1048576)); }
+    if(/Begin Date/) { $_ = "<h1>Begin Date: $firstDate</h1>\n"; }
+    elsif(/End Date/) { $_ = "<h1>End Date: $lastDate</h1>\n"; }
+    elsif(/Num Updates/) { $_ = "<h1>Num Updates: $newUpd</h1>  <!-- This is the number of videos for a video LP-->\n"; }
 
     $idxHeader .= $_;
-    last if /begin TOC/;
+    last if /<!-- BEGIN_TOC -->/;
   }
 
   while(<IDX>) {
-    last if /end TOC/;
+    last if /<!-- END_TOC -->/;
   }
   $idxFooter .= $_;
 
@@ -1413,6 +1385,15 @@ sub renumThread {
 __END__
 
 Revision History
+
+2011/01/17 - [baldurk] add <missing>...</missing> tags around missing images
+                       removed s#<br />#<br>#g
+
+2010/12/27 - Heavy modification of renumThread for new LP archive
+
+2010/12/13 - Modified HTML generation for new LP archive layout
+
+2010/09/25 - <dt class="author"> is now <dt class="author" title="">
 
 2009/06/02 - Fixed the de-mirror-servering, updates are now named
              Update 01, Update 02, etc
