@@ -7,9 +7,6 @@ $threadURL = "";
 # and the page title of updates
 $gameName = "?";
 
-# Your SA name, for the 'Collected By' line
-$collector = "Your SA Name Here";
-
 
 # These following settings should be set to 1 to enable them,
 # or to 0 to disable them
@@ -63,7 +60,6 @@ if(! $uid) {
   $pass = "65517c0bb4f3b05648502d1917fb2c6a";
 }
 
-
 $scriptStart = time;
 print "Script started at ", scalar(localtime($scriptStart)), "\n\n";
 
@@ -86,7 +82,8 @@ if(! $threadURL) {
 
 open(IN, "<$ARGV[0]") || die "Couldn't open file $ARGV[0]: $!\n";
 
-$upd = 0; $postBody = "";
+# $upd: -1 is no updates, 0 is the OP
+$upd = -1; $postBody = "";
 $author = "?"; $firstDate = "?";
 $threadName = "?"; $threadURL = "?";
 $errors = "";
@@ -99,7 +96,7 @@ mkdir "Images" || die $!;
 while(<IN>) {
   # Found a post!
   if(/<!-- BeginContentMarker -->/) {
-    if($upd == 1) { # shouldn't be able to get here if we already
+    if($upd == 0) { # shouldn't be able to get here if we already
                     # got an update, but just in case
       last;
     }
@@ -108,7 +105,7 @@ while(<IN>) {
   }
   
   elsif($author eq "?" && /<dt class="author/) { # Post author
-    ($author) = m#<dt class="author(?: op)?">(.+)</dt>#;
+    ($author) = m#<dt class="author(?: op)?" title="">(.+)</dt>#;
   }
 
   elsif($firstDate eq "?" && /<td class="postdate">/) { # First post date
@@ -145,30 +142,25 @@ open(IDX, ">index.html") || die "Couldn't create index: $!\n";
 
 print IDX <<HEADER1;
 <html>
-
 <head>
-<link rel="StyleSheet" href="$cssURL" type="text/css">
-<TITLE>$gameName - Index</TITLE>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta http-equiv="content-language" content="en" />
 </head>
-
 <body>
-<h1>Let's Play $gameName</h1>
-Author: $author<br>
-Collected By: $collector<br>
-Original Thread: <A HREF="$threadURL">$threadName</A><br>
-First Update: $firstDate<br>
-Last Update: ?<br>
-Date Added: $addedDate<br>
-
-<br><br><br>
-<h1>Statistics</h1>
+<!-- NOTE: Don't change the layout of these, it will be parsed by a script. -->
+<h1>Title: $gameName</h1>
+<h1>Author: $author</h1>
+<h1>Thread: $threadName</h1>
+<h1>Begin Date: $firstDate</h1>
+<h1>End Date: ---</h1>
+<h1>Author Webpage: ---</h1>
 HEADER1
 
-print IDX "Number of Videos: ", scalar(grep(!/^b/, @videoURLs)), "<br>\n";
+print IDX "<h1>Num Updates: ", scalar(grep(!/^b/, @videoURLs)), "</h1> <!-- This is the number of videos for a video LP-->\n";
 
 print IDX <<MAIN;
 
-<br><br><br>
+<!-- !!DO NOT REMOVE!! BEGIN_CONTENT !!DO NOT REMOVE!! -->
 <h1>Introduction</h1>
 $postBody
 MAIN
@@ -179,16 +171,9 @@ if($#videoURLs > -1) {
   print IDX <<VIDEOH;
 <br><br><br>
 <h1>Videos</h1>
-<TABLE border="1">
-<COL width="825">
+<table>
+<col width="99%">
 VIDEOH
-
-  if($multiBackups) {
-    for($i=0; $i<$vidCols;$i++) {
-      print IDX qq#<COL width="75">#;
-    }
-  }
-  print IDX "\n";
 
   $tblContent = "";
 
@@ -200,22 +185,22 @@ VIDEOH
       ($t1, $t2) = ($title =~ /^([^`]+)`(.+)$/);
       if(! $t1) { $t1 = $title; $t2 = $title; }
 
-      $tblContent .= qq#<TR><TD>$t1<TD><a href="$URL" target="_blank" rel="nofollow">$t2</a>\n#;
+      $tblContent .= qq#<tr><td>$t1</td><td><a href="$URL" target="_blank" rel="nofollow">$t2</a></td>\n#;
 
       while($videoURLs[$i+1] =~ /^b/) {
         $i++;
         $URL = $videoURLs[$i]; $title = $videoTitles[$i];
 
         $URL =~ s/^b//;
-        $tblContent .= qq#<TD><a href="$URL" target="_blank" rel="nofollow">$title</a>\n#;
+        $tblContent .= qq#<td><a href="$URL" target="_blank" rel="nofollow">$title</a></td>\n#;
       }
     } else {
-      $tblContent .= qq#<TR><TD><a href="$URL" target="_blank" rel="nofollow">$title</a>\n#;
+      $tblContent .= qq#<tr><td><a href="$URL" target="_blank" rel="nofollow">$title</a></td>\n#;
     }
 
-    $tblContent .= "\n";
+    $tblContent .= "</tr>\n";
   }  
-  $tblContent .= "</TABLE>\n\n";
+  $tblContent .= "</table>\n\n";
 }
 
 # Dump table to file
@@ -226,8 +211,7 @@ unlink 'wgeterr.txt';
 
 
 print IDX <<FOOTER;
-<br><br><br>
-<A HREF="/LetsPlay/">Back to Let's Play Index</A>
+<!-- !!DO NOT REMOVE!! END_CONTENT !!DO NOT REMOVE!! -->
 </body>
 </html>
 FOOTER
@@ -281,6 +265,7 @@ sub getPost {
   $upd++;
   $img = 0;
   undef %images;
+  my @errimgs = qw();
 
   while(<IN>) {
     # Ignore these
@@ -363,10 +348,12 @@ sub getPost {
     }
 
     # Catch images (and take a copy of the post) - first post only!
-    if($upd == 1) {
+    if($upd == 0) {
       # loop in case there's multiple images on one line, try repeatedly
       while(m#<img (width=\d+ )?src="http://# ||
             m#<a href="http://[^/]+waffleimages\.com#) {
+
+        $lineCopy = $_;
 
         # Pick out the URL
         ($imgURL) = m#<img (?:width=\d+ )?src="(http://[^"]+)"#;
@@ -381,12 +368,12 @@ sub getPost {
         $imgURL =~ s#http://imagesocket.com/#http://content.imagesocket.com/#;
         # SALR (or similar) fix
         $imgURL =~ s/#[^#]+$//;
-	# paintedover demands a forums referer
-	if($imgURL =~ /paintedover/) {
-	  $wgetExtra = qq#--referer="http://forums.somethingawful.com/" #;
-	} else {
-	  $wgetExtra = '';
-	}
+        # paintedover demands a forums referer
+        if($imgURL =~ /paintedover/) {
+          $wgetExtra = qq#--referer="http://forums.somethingawful.com/" #;
+        } else {
+          $wgetExtra = '';
+        }
         # Un-mirror-server waffleimages links
         $imgURL =~ s#http://[^/]+.mirror.waffleimages.com/files/../([^\.]+)\..+$#http://img.waffleimages.com/$1/#;
 
@@ -446,6 +433,7 @@ sub getPost {
           if($? != 0) {
             print "errored\n";
             $errors .= "* wget failure getting $imgURL for image $img\n";
+            push(@errimgs, "$newImgLink");
             open(ERR, "<wgeterr.txt");
             while(<ERR>) { $errors .= $_; }
             close(ERR);
@@ -458,7 +446,9 @@ sub getPost {
         }
 
         # Adjust the post for the new image location
-        s/\Q$origImgURL\E/$newImgLink/;
+        $lineCopy =~ s/\Q$origImgURL\E/$newImgLink/;
+
+        $_ = $lineCopy;
       }
 
       $postBody .= $_;
@@ -467,8 +457,10 @@ sub getPost {
 
   # Fix definitely typo filter
   $postBody =~ s/\[NOTE: I AM TOO STUPID TO SPELL THE WORD "DEFINITELY" CORRECTLY\]/definitely/g;
-  # Switch <br /> for <br>
-  $postBody =~ s#<br />#<br>#g;
+  for my $img (@errimgs) {
+    $postBody =~ s#<img src="$img" alt="" class="img" border="0">#<missing>$img</missing>#g;
+    $postBody =~ s#<a href="$img(.*?)</a>#<missing>$img</missing>#gsm;
+  }
 }
 
 
@@ -566,7 +558,7 @@ sub detectWinCookies {
       RegCloseKey($shFKey);
 
       if(! $uid) { $noIE = "No SomethingAwful cookies found in IE cookies"; }
-	  else { print "  Found in IE cookies\n"; }
+            else { print "  Found in IE cookies\n"; }
     }
   }
 
@@ -843,6 +835,15 @@ sub processCookie {
 __END__
 
 Revision History
+
+2011/02/05 - Added closing </td> and </tr> tags in video table
+
+2011/01/17 - [baldurk] add <missing>...</missing> tags around missing images
+                       removed s#<br />#<br>#g
+              
+2010/11/22 - Modified HTML generation for new LP archive layout
+
+2010/09/25 - <dt class="author"> is now <dt class="author" title="">
 
 2008/12/01 - Removed fromearth.net reference from $cssURL
 
