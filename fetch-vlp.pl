@@ -50,16 +50,16 @@ if($^O eq "MSWin32") {
   # Add the current directory to the path so wget works if it's there
   $ENV{'PATH'} = $ENV{'PATH'} . ':.';
 } elsif(-f $ENV{"HOME"} . "/sacookies") {
-	# - other OSes 'Auto-detect' effort, check ~/sacookies
+  # - other OSes 'Auto-detect' effort, check ~/sacookies
 
-	# Read file to $cookies
-	local $/=undef;
-	open COOKIES, $ENV{"HOME"} . "/sacookies" or die "Failed to open file $!";
-	my $cookies = <COOKIES>;
-	close COOKIES;
+  # Read file to $cookies
+  local $/=undef;
+  open COOKIES, $ENV{"HOME"} . "/sacookies" or die "Failed to open file $!";
+  my $cookies = <COOKIES>;
+  close COOKIES;
 
-	# first two lines are uid and pass
-	($uid, $pass) = split("\n", $cookies);
+  # first two lines are uid and pass
+  ($uid, $pass) = split("\n", $cookies);
 }
 
 # - or manual settings:
@@ -197,12 +197,22 @@ VIDEOH
 
       $tblContent .= qq#<tr><td>$t1</td><td><a href="$URL" target="_blank" rel="nofollow">$t2</a></td>\n#;
 
+      my $curCols = 0;
+
       while($videoURLs[$i+1] =~ /^b/) {
         $i++;
+        $curCols++;
         $URL = $videoURLs[$i]; $title = $videoTitles[$i];
 
         $URL =~ s/^b//;
         $tblContent .= qq#<td><a href="$URL" target="_blank" rel="nofollow">$title</a></td>\n#;
+      }
+
+      # ensure every row has the same number of cells
+      while($curCols < $vidCols)
+      {
+        $curCols++;
+        $tblContent .= qq#<td>&nbsp;</td>\n#;
       }
     } else {
       $tblContent .= qq#<tr><td><a href="$URL" target="_blank" rel="nofollow">$title</a></td>\n#;
