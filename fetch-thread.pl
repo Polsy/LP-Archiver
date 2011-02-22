@@ -90,6 +90,17 @@ if($^O eq "MSWin32") {
   }
   # Add the current directory to the path so wget works if it's there
   $ENV{'PATH'} = $ENV{'PATH'} . ':.';
+} elsif(-f $ENV{"HOME"} . "/sacookies") {
+	# - other OSes 'Auto-detect' effort, check ~/sacookies
+
+	# Read file to $cookies
+	local $/=undef;
+	open COOKIES, $ENV{"HOME"} . "/sacookies" or die "Failed to open file $!";
+	my $cookies = <COOKIES>;
+	close COOKIES;
+
+	# first two lines are uid and pass
+	($uid, $pass) = split("\n", $cookies);
 }
 
 # - or manual settings:
