@@ -58,9 +58,6 @@ $wgetParms = "--tries=3";
 # but not actually downloading the videoe/making a Backup link)
 @otherVidSites = ('filefront.com', 'vimeo.com', 'blip.tv');
 
-# Location of CSS file
-$cssURL = "/LetsPlay/myStyle.css";
-
 # Black hole file for checking a file exists on the server
 $nullFile = "/dev/null";
 
