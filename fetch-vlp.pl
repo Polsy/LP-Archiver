@@ -191,7 +191,7 @@ VIDEOH
     $URL = $videoURLs[$i]; $title = $videoTitles[$i];
 
     # Columns for video mirrors
-    if($multiBackups && $vidCols > 1) {
+    if($multiBackups) {
       ($t1, $t2) = ($title =~ /^([^`]+)`(.+)$/);
       if(! $t1) { $t1 = $title; $t2 = $title; }
 
