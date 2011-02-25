@@ -32,6 +32,7 @@ $wgetParms = "--tries=2";
                ['blip.tv',     'blip.tv'           ],
                ['Baldurdash',  'bd.baldurk.org'    ],
                ['Grimfiend',   'grimfiend.com'     ],
+               ['SD.net',      'somethingdreadful.net'],
                ['DiscoShiny',  'discoshiny.com'    ]);
 
 # Cookies for downloading threads from the forums:
@@ -49,6 +50,17 @@ if($^O eq "MSWin32") {
   }
   # Add the current directory to the path so wget works if it's there
   $ENV{'PATH'} = $ENV{'PATH'} . ':.';
+} elsif(-f $ENV{"HOME"} . "/sacookies") {
+  # - other OSes 'Auto-detect' effort, check ~/sacookies
+
+  # Read file to $cookies
+  local $/=undef;
+  open COOKIES, $ENV{"HOME"} . "/sacookies" or die "Failed to open file $!";
+  my $cookies = <COOKIES>;
+  close COOKIES;
+
+  # first two lines are uid and pass
+  ($uid, $pass) = split("\n", $cookies);
 }
 
 # - or manual settings:
@@ -180,18 +192,28 @@ VIDEOH
     $URL = $videoURLs[$i]; $title = $videoTitles[$i];
 
     # Columns for video mirrors
-    if($multiBackups && $vidCols > 1) {
+    if($multiBackups) {
       ($t1, $t2) = ($title =~ /^([^`]+)`(.+)$/);
       if(! $t1) { $t1 = $title; $t2 = $title; }
 
       $tblContent .= qq#<tr><td>$t1</td><td><a href="$URL" target="_blank" rel="nofollow">$t2</a></td>\n#;
 
+      my $curCols = 0;
+
       while($videoURLs[$i+1] =~ /^b/) {
         $i++;
+        $curCols++;
         $URL = $videoURLs[$i]; $title = $videoTitles[$i];
 
         $URL =~ s/^b//;
         $tblContent .= qq#<td><a href="$URL" target="_blank" rel="nofollow">$title</a></td>\n#;
+      }
+
+      # ensure every row has the same number of cells
+      while($curCols < $vidCols)
+      {
+        $curCols++;
+        $tblContent .= qq#<td>&nbsp;</td>\n#;
       }
     } else {
       $tblContent .= qq#<tr><td><a href="$URL" target="_blank" rel="nofollow">$title</a></td>\n#;
