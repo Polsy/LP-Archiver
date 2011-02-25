@@ -833,7 +833,7 @@ sub processCookie {
 }
 __END__
 
-Revision History
+Pre-github Revision History
 
 2011/02/05 - Added closing </td> and </tr> tags in video table
 

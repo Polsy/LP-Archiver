@@ -55,7 +55,7 @@ $wgetParms = "--tries=3";
 @videoSites = ('dailymotion.com', 'youtube.com', 'video.google.[^/]+');
 
 # Other sites containing videos (to mark a post as containing content,
-# but not actually downloading the videoe/making a Backup link)
+# but not actually downloading the video/making a Backup link)
 @otherVidSites = ('filefront.com', 'vimeo.com', 'blip.tv');
 
 # Location of CSS file
@@ -1384,7 +1384,7 @@ sub renumThread {
 
 __END__
 
-Revision History
+Pre-github Revision History
 
 2011/01/17 - [baldurk] add <missing>...</missing> tags around missing images
                        removed s#<br />#<br>#g
