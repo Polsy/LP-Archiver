@@ -1234,6 +1234,9 @@ sub renumThread {
     rename $four, "Update " . (sprintf("%02d", $n+1));  
     print "Renumbered $four to Update ", $n+1, "\n";
 
+    # Add a new chapter title to keep TOC in sync
+    splice @chapTitles, $n+1, 0, 'Inserted Chapter';
+
     if($inserted > $four) { $inserted = $four; }
   }
 
