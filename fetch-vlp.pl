@@ -32,6 +32,7 @@ $wgetParms = "--tries=2";
                ['blip.tv',     'blip.tv'           ],
                ['Baldurdash',  'bd.baldurk.org'    ],
                ['Grimfiend',   'grimfiend.com'     ],
+               ['C&I',         'chipandironicus.com'],
                ['SD.net',      'somethingdreadful.net'],
                ['DiscoShiny',  'discoshiny.com'    ]);
 
