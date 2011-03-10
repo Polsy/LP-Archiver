@@ -198,7 +198,7 @@ VIDEOH
 
       $tblContent .= qq#<tr><td>$t1</td><td><a href="$URL" target="_blank" rel="nofollow">$t2</a></td>\n#;
 
-      my $curCols = 0;
+      my $curCols = 1;
 
       while($videoURLs[$i+1] =~ /^b/) {
         $i++;
