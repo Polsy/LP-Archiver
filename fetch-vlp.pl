@@ -374,10 +374,10 @@ sub getPost {
       # loop in case there's multiple images on one line, try repeatedly
       while(m#<img (width=\d+ )?src="http://# ||
             m#<a href="http://[^/]+waffleimages\.com# ||
-            m#<a href="http://[^/]+lpix\.org# ||
+            m#<a href="http://lpix\.org/# ||
             m#<a href="http://[^/]+photobucket\.com# ||
-            m#<a href="http://[^/]+imgur\.com# ||
-            m#<a href="http://[^/]+tinypic\.com#) {
+            m#<a href="http://[^/]*imgur\.com/# ||
+            m#<a href="http://[^/]*tinypic\.com/#) {
 
         $lineCopy = $_;
 
