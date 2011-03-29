@@ -12,6 +12,8 @@ $gameName = "?";
 # These following settings should be set to 1 to enable them,
 # or to 0 to disable them
 
+$downloadOnePost = 0;
+
 # Fetch images and videos
 # (you might want to temporarily disable this for faster testing)
 $downloadFiles = 1;
@@ -63,8 +65,13 @@ $nullFile = "/dev/null";
 
 
 # renum'ing? - ie, does index.html exist?
-if(-s "index.html") {
+if(!$downloadOnePost and -s "index.html") {
   &renumThread;
+  exit;
+}
+
+if($downloadOnePost and -s "Update XYZ/index.html") {
+  print "Already got a single post as XYZ! Move it out of the way before grabbing another.\n";
   exit;
 }
 
@@ -146,6 +153,10 @@ $firstDate = "?"; $lastDate = "?";
 $threadName = "?"; $threadURL = "?";
 $numVids = 0; $vidSize = 0;
 $errors = ""; $skippedImgFile = ""; $skippedVidFile = "";
+
+if($downloadOnePost) {
+  $autoChapters = 0;
+}
 
 
 if($autoChapters) {
@@ -254,6 +265,10 @@ close(IN);
 
 # Delete temporary file if we downloaded the thread ourselves
 if($threadURL) { unlink 'autoFetchedThread.txt'; }
+
+if($downloadOnePost) {
+  exit;
+}
 
 # Need to delete the 'next' links from the final update
 
@@ -640,6 +655,8 @@ sub getPost {
     if($upd == -1) { $keepPost = 1; }
   }
 
+  if($downloadOnePost) { $keepPost = 1; }
+
   if(! $keepPost) {
     # Keeping requires: $minImage images or a video href (if videoPosts is on)
     # not contained inside a [quote] (a <blockquote>)
@@ -650,6 +667,8 @@ sub getPost {
     # This post was valid, so accept post date immediately below it
     $gotUpdate = 1;
     $upd++;
+
+    if($downloadOnePost) { $upd = 50; }
 
     # Fix definitely typo filter
     $postBody =~ s/\[NOTE: I AM TOO STUPID TO SPELL THE WORD "DEFINITELY" CORRECTLY\]/definitely/g;
@@ -667,6 +686,9 @@ sub getPost {
  
       # Create a directory to put it all in
       $postDir = sprintf("Update %02d", $upd);
+
+      if($downloadOnePost) { $postDir = "Update XYZ"; }
+
       mkdir $postDir || die $!; 
   
       # Generate the HTML file
@@ -957,6 +979,8 @@ sub getThread {
     $firstPage .= $_;
   }
   close(FIRST);
+
+  if($downloadOnePost) { $pages = 1; $authorID = 0; $authorPosts = 1; }
 
   # If got the author ID and there's more than one page, need to reget first page to get correct number of pages
   if($authorID && $pages > 1) {
