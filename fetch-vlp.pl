@@ -36,6 +36,11 @@ $wgetParms = "--tries=2";
                ['SD.net',      'somethingdreadful.net'],
                ['DiscoShiny',  'discoshiny.com'    ]);
 
+# These lines are required for Firefox cookie handling
+# Remove them if they cause problems but cookies may fail
+use DBD::SQLite;
+use File::Copy;
+
 # Cookies for downloading threads from the forums:
 # - Auto-detect by default (currently Windows-only)
 if($^O eq "MSWin32") {
@@ -524,19 +529,46 @@ sub detectWinCookies {
 
     $cPath .= "/$profDir";
     if(! -d $cPath) { $noFF = "Couldn't find a Firefox profile"; }
-    elsif(! open(COOK, "$cPath/cookies.txt")) { $noFF = "Couldn't open Firefox cookie file"; }
     else {
-      while(<COOK>) {
-        if(/^forums.somethingawful.com/) {
-          ($key, $value) = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\S+)\s+(\S+)/;
-          if($key eq "bbuserid") { $uid = $value; }
-          if($key eq "bbpassword") { $pass = $value; }
+      if(-f "$cPath/cookies.txt") {
+        if(! open(COOK, "$cPath/cookies.txt")) { $noFF = "Couldn't open Firefox cookie file"; }
+        else {
+          while(<COOK>) {
+            if(/^forums.somethingawful.com/) {
+              ($key, $value) = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\S+)\s+(\S+)/;
+              if($key eq "bbuserid") { $uid = $value; }
+              if($key eq "bbpassword") { $pass = $value; }
+            }
+          }
+          close(COOK);
+    
+          if(! $uid) { $noFF = "No SomethingAwful cookies found in Firefox cookies"; }
+          else { print "  Found in Firefox cookies\n"; }
         }
       }
-      close(COOK);
-
-      if(! $uid) { $noFF = "No SomethingAwful cookies found in Firefox cookies"; }
-      else { print "  Found in Firefox cookies\n"; }
+      elsif(-f "$cPath/cookies.sqlite") {
+        # eval all of this in case the 'use' statements were commented out
+        eval {
+          # Can't actually access the database if Firefox is open, so must take a copy
+          $newFile = $ENV{'TEMP'} . "/cookies.sqlite";
+          copy("$cPath/cookies.sqlite", "$newFile");
+  
+          $dbh = DBI->connect("dbi:SQLite:dbname=$newFile", "", "");
+          if(!defined($dbh)) { $noFF = "Couldn't open Firefox cookie database"; }
+          else {
+            $dbh->{PrintError} = 0; # hide warnings from corrupt cookie files
+            $dbres = $dbh->selectall_hashref("SELECT name,value FROM moz_cookies WHERE name LIKE 'bb%' AND host='forums.somethingawful.com'", "name");
+            if($dbres) {
+              $uid = $$dbres{'bbuserid'}->{'value'};
+              $pass = $$dbres{'bbpassword'}->{'value'};
+              if($uid && $pass) { print "  Found in Firefox cookies\n"; }
+              else { $noFF = "No SomethingAwful cookies found in Firefox cookie db"; }
+            } else { $noFF = "No SomethingAwful cookies found in Firefox cookie db"; }
+            $dbh->disconnect;
+          }
+        };
+        if($@) { $noFF = "Couldn't open Firefox cookie database"; }
+      } else { $noFF = "No Firefox cookie file found"; }
     }
   }
 
@@ -593,10 +625,14 @@ sub detectWinCookies {
 
     use Fcntl 'O_RDONLY', 'SEEK_CUR';
     $MSB = 0x80;
-    $cPath = $ENV{'APPDATA'} . "/Opera/Opera/profile";
+    $cPath = $ENV{'APPDATA'} . "/Opera/Opera";
     if(! -d $cPath) { $noOp = "Opera not installed?\n"; }
     else {
-      ($uid, $pass) = &doOpera("$cPath/cookies4.dat");
+      if(-f "$cPath/cookies4.dat") { # location differs between versions
+        ($uid, $pass) = &doOpera("$cPath/cookies4.dat");
+      } else {
+        ($uid, $pass) = &doOpera("$cPath/profile/cookies4.dat");
+      }
       if(! $uid) { $noOp = "No SomethingAwful cookies found in Opera cookies"; }
       else { print "  Found in Opera cookies\n"; } 
     }
