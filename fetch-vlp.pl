@@ -36,7 +36,7 @@ $wgetParms = "--tries=2";
                ['SD.net',      'somethingdreadful.net'],
                ['DiscoShiny',  'discoshiny.com'    ]);
 
-# These lines are required for Firefox cookie handling
+# These lines are required for Firefox and Chrome cookie handling
 # Remove them if they cause problems but cookies may fail
 use DBD::SQLite;
 use File::Copy;
@@ -515,60 +515,92 @@ sub getThread {
 sub detectWinCookies {
   print "Auto-detecting cookies...\n";
 
-  # Check Firefox first
-  # (Application Data\Mozilla\Firefox\Profiles\myProfile\cookies.txt)
-  $cPath = $ENV{'APPDATA'} . "/Mozilla/Firefox";
-  if(! -d $cPath) { $noFF =  "Firefox not installed"; }
-  elsif(! open(PROINI, "<$cPath/profiles.ini")) {
-    $noFF = "Couldn't read Firefox profiles file";
-  } else {
-    while(<PROINI>) {
-      if(/^Path=/) { ($profDir) = /^Path=(.+)$/; last; }
-    }
-    close(PROINI);
-
-    $cPath .= "/$profDir";
-    if(! -d $cPath) { $noFF = "Couldn't find a Firefox profile"; }
-    else {
-      if(-f "$cPath/cookies.txt") {
-        if(! open(COOK, "$cPath/cookies.txt")) { $noFF = "Couldn't open Firefox cookie file"; }
-        else {
-          while(<COOK>) {
-            if(/^forums.somethingawful.com/) {
-              ($key, $value) = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\S+)\s+(\S+)/;
-              if($key eq "bbuserid") { $uid = $value; }
-              if($key eq "bbpassword") { $pass = $value; }
-            }
-          }
-          close(COOK);
-    
-          if(! $uid) { $noFF = "No SomethingAwful cookies found in Firefox cookies"; }
-          else { print "  Found in Firefox cookies\n"; }
-        }
+  # Check Chrome first
+  # (Local Application Data\Google\Chrome\User Data\Default\Cookies)
+  if($ENV{'LOCALAPPDATA'}) {
+    $cPath = $ENV{'LOCALAPPDATA'} . "/Google/Chrome/User Data/Default/Cookies";
+  } else { # XP, gross
+    $cPath = $ENV{'USERPROFILE'} . "/Local Settings/Application Data/Google/Chrome/User Data/Default/Cookies";
+  }
+  if(! -f $cPath) { $noChrome = "Can't find Chrome cookies"; }
+  else {
+    # eval all of this in case the 'use' statements were commented out
+    eval {
+      $dbh = DBI->connect("dbi:SQLite:dbname=$cPath", "", "");
+      if(!defined($dbh)) { $noChrome = "Couldn't open Chrome cookie database"; }
+      else {
+        $dbh->{PrintError} = 0; # hide warnings from corrupt cookie files
+        $dbres = $dbh->selectall_hashref("SELECT name,value FROM cookies WHERE name LIKE 'bb%' AND host_key='forums.somethingawful.com'", "name");
+        if($dbres) {
+          $uid = $$dbres{'bbuserid'}->{'value'};
+          $pass = $$dbres{'bbpassword'}->{'value'};
+          if($uid && $pass) { print "  Found in Chrome cookies\n"; }
+          else { $noChrome = "No SomethingAwful cookies found in Chrome cookie db"; }
+        } else { $noChrome = "No SomethingAwful cookies found in Chrome cookie db"; }
+        $dbh->disconnect;
       }
-      elsif(-f "$cPath/cookies.sqlite") {
-        # eval all of this in case the 'use' statements were commented out
-        eval {
-          # Can't actually access the database if Firefox is open, so must take a copy
-          $newFile = $ENV{'TEMP'} . "/cookies.sqlite";
-          copy("$cPath/cookies.sqlite", "$newFile");
+    };
+    if($@) { $noChrome = "Couldn't open Chrome cookie database"; }
+  }
+
+  if($noChrome) {
+    print "  Chrome check failed: $noChrome\n";
+
+    # Firefox
+    # (Application Data\Mozilla\Firefox\Profiles\myProfile\cookies.txt)
+    $cPath = $ENV{'APPDATA'} . "/Mozilla/Firefox";
+    if(! -d $cPath) { $noFF =  "Firefox not installed"; }
+    elsif(! open(PROINI, "<$cPath/profiles.ini")) {
+      $noFF = "Couldn't read Firefox profiles file";
+    } else {
+      while(<PROINI>) {
+        if(/^Path=/) { ($profDir) = /^Path=(.+)$/; last; }
+      }
+      close(PROINI);
   
-          $dbh = DBI->connect("dbi:SQLite:dbname=$newFile", "", "");
-          if(!defined($dbh)) { $noFF = "Couldn't open Firefox cookie database"; }
+      $cPath .= "/$profDir";
+      if(! -d $cPath) { $noFF = "Couldn't find a Firefox profile"; }
+      else {
+        if(-f "$cPath/cookies.txt") {
+          if(! open(COOK, "$cPath/cookies.txt")) { $noFF = "Couldn't open Firefox cookie file"; }
           else {
-            $dbh->{PrintError} = 0; # hide warnings from corrupt cookie files
-            $dbres = $dbh->selectall_hashref("SELECT name,value FROM moz_cookies WHERE name LIKE 'bb%' AND host='forums.somethingawful.com'", "name");
-            if($dbres) {
-              $uid = $$dbres{'bbuserid'}->{'value'};
-              $pass = $$dbres{'bbpassword'}->{'value'};
-              if($uid && $pass) { print "  Found in Firefox cookies\n"; }
-              else { $noFF = "No SomethingAwful cookies found in Firefox cookie db"; }
-            } else { $noFF = "No SomethingAwful cookies found in Firefox cookie db"; }
-            $dbh->disconnect;
+            while(<COOK>) {
+              if(/^forums.somethingawful.com/) {
+                ($key, $value) = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\S+)\s+(\S+)/;
+                if($key eq "bbuserid") { $uid = $value; }
+                if($key eq "bbpassword") { $pass = $value; }
+              }
+            }
+            close(COOK);
+      
+            if(! $uid) { $noFF = "No SomethingAwful cookies found in Firefox cookies"; }
+            else { print "  Found in Firefox cookies\n"; }
           }
-        };
-        if($@) { $noFF = "Couldn't open Firefox cookie database"; }
-      } else { $noFF = "No Firefox cookie file found"; }
+        }
+        elsif(-f "$cPath/cookies.sqlite") {
+          # eval all of this in case the 'use' statements were commented out
+          eval {
+            # Can't actually access the database if Firefox is open, so must take a copy
+            $newFile = $ENV{'TEMP'} . "/cookies.sqlite";
+            copy("$cPath/cookies.sqlite", "$newFile");
+    
+            $dbh = DBI->connect("dbi:SQLite:dbname=$newFile", "", "");
+            if(!defined($dbh)) { $noFF = "Couldn't open Firefox cookie database"; }
+            else {
+              $dbh->{PrintError} = 0; # hide warnings from corrupt cookie files
+              $dbres = $dbh->selectall_hashref("SELECT name,value FROM moz_cookies WHERE name LIKE 'bb%' AND host='forums.somethingawful.com'", "name");
+              if($dbres) {
+                $uid = $$dbres{'bbuserid'}->{'value'};
+                $pass = $$dbres{'bbpassword'}->{'value'};
+                if($uid && $pass) { print "  Found in Firefox cookies\n"; }
+                else { $noFF = "No SomethingAwful cookies found in Firefox cookie db"; }
+              } else { $noFF = "No SomethingAwful cookies found in Firefox cookie db"; }
+              $dbh->disconnect;
+            }
+          };
+          if($@) { $noFF = "Couldn't open Firefox cookie database"; }
+        } else { $noFF = "No Firefox cookie file found"; }
+      }
     }
   }
 
